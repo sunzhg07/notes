@@ -1,0 +1,420 @@
+Device (TCS5)
+{
+    Name (_ADR, Zero)  // _ADR: Address
+    Name (_HID, "MSSL1680")  // _HID: Hardware ID
+    Name (_CID, "PNP1680")  // _CID: Compatible ID
+    Name (_S0W, Zero)  // _S0W: S0 Device Wake State
+    Name (_DEP, Package (0x02)  // _DEP: Dependencies
+    {
+        GPO1, 
+        I2C5
+    })
+    Method (_PS3, 0, Serialized)  // _PS3: Power State 3
+    {
+        If (LEqual (^^^GPO0.AVBL, One))
+        {
+            // TCON = Touchscreen On, SHUTDOWN pin, Deepsleep on low
+            Store (Zero, ^^^GPO0.TCON) /* \_SB_.GPO0.TCON */
+        }
+    }
+
+    Method (_PS0, 0, Serialized)  // _PS0: Power State 0
+    {
+        If (LEqual (^^^GPO1.AVBL, One))
+        {
+            // TCD3 = Touchscreen 3.3V or 1.8V?, power gate? -> Power-on reset on low?
+            Store (Zero, ^^^GPO1.TCD3) /* \_SB_.GPO1.TCD3 */
+        }
+
+        Sleep (0x05)
+        If (LEqual (^^^GPO0.AVBL, One))
+        {
+            // TCON = Touchscreen On, SHUTDOWN pin, Wakeup on high
+            Store (One, ^^^GPO0.TCON) /* \_SB_.GPO0.TCON */
+        }
+
+        Sleep (0x1E)
+        If (LEqual (^^^GPO1.AVBL, One))
+        {
+            // TCD3 = Touchscreen 3.3V or 1.8V?, power gate? -> Reset complete on high?
+            Store (One, ^^^GPO1.TCD3) /* \_SB_.GPO1.TCD3 */
+        }
+
+        Sleep (0x78)
+    }
+
+    Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
+    {
+        Name (RBUF, ResourceTemplate ()
+        {
+            // I2CSerialBusV2 ( SlaveAddress=_ADR , SlaveMode=_SLV , ConnectionSpeed=_SPE , AddressingMode=_MOD , ResourceSource ,
+			// ResourceSourceIndex , ResourceUsage , DescriptorName , Shared=_SHR, VendorData=_VEN )
+            // Interpretation: Device 0x40 (=64) on I2C controller \\_SB.I2C4, 7bit addressing, pure slave, 400kHz clock
+            I2cSerialBus (0x0040, ControllerInitiated, 0x00061A80,
+                AddressingMode7Bit, "\\_SB.I2C4",
+                0x00, ResourceConsumer, ,
+                )
+            // Interrupt (ResourceUsage, EdgeLevel=_HE, ActiveLevel=_LL, Shared=_SHR, ResourceSourceIndex,
+			// ResourceSource, DescriptorName) { InterruptList=_INT } => Buffer
+			// Interpretation: Maps to APIC Interrupt 0x44 (=70)
+            Interrupt (ResourceConsumer, Edge, ActiveHigh, Exclusive, ,, )
+            {
+                0x00000044,
+            }
+            // GpioIo ( Shared=_SHR, PinConfig=_PPI, DebounceTimeout=_DBT, DriveStrength=_DRS, IORestriction=_IOR, ResourceSource,
+			// ResourceSourceIndex, ResourceUsage, DescriptorName, VendorData=_VEN ) {PinList=_PIN}
+			// Interpretation: Output GPIO pin, controller \\_SB.GPO1, pin number 0x1a (=26)
+            GpioIo (Shared, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO1", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x001A
+                }
+			// Interpretation: Bidrectional GPIO pin, controller \\_SB.GPO1, pin number 0x03 (=3)
+            GpioIo (Shared, PullDefault, 0x0000, 0x0000, IoRestrictionNone,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0003
+                }
+        })
+        Return (RBUF) /* \_SB_.I2C4.TCS5._CRS.RBUF */
+    }
+
+    Method (_STA, 0, NotSerialized)  // _STA: Status
+    {
+        If (LEqual (TPID, 0x04))
+        {
+            Return (0x0F)
+        }
+
+        Return (Zero)
+    }
+}
+
+Device (GPO0)
+{
+    Name (_ADR, Zero)  // _ADR: Address
+    Name (_HID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _HID: Hardware ID
+    Name (_CID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _CID: Compatible ID
+    Name (_DDN, "ValleyView General Purpose Input/Output (GPIO) controller")  // _DDN: DOS Device Name
+    Name (_UID, One)  // _UID: Unique ID
+    Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
+    {
+        Name (RBUF, ResourceTemplate ()
+        {
+            Memory32Fixed (ReadWrite,
+                0xFED0C000,         // Address Base
+                0x00001000,         // Address Length
+                )
+            Interrupt (ResourceConsumer, Level, ActiveLow, Shared, ,, )
+            {
+                0x00000031,
+            }
+        })
+        Return (RBUF) /* \_SB_.GPO0._CRS.RBUF */
+    }
+
+    Method (_STA, 0, NotSerialized)  // _STA: Status
+    {
+        Return (0x0F)
+    }
+
+    Name (AVBL, Zero)
+    Method (_REG, 2, NotSerialized)  // _REG: Region Availability
+    {
+        If (LEqual (Arg0, 0x08))
+        {
+            Store (Arg1, AVBL) /* \_SB_.GPO0.AVBL */
+        }
+    }
+
+    OperationRegion (GPOP, GeneralPurposeIo, Zero, 0x0C)
+    Field (GPOP, ByteAcc, NoLock, Preserve)
+    {
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO0", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0002
+                }
+        ), 
+        CCU2,   1, 
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO0", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0003
+                }
+        ), 
+        CCU3,   1, 
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO0", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x005F
+                }
+        ), 
+        TCON,   1, 
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO0", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0064
+                }
+        ), 
+        WWD3,   1
+    }
+}
+
+Device (GPO1)
+{
+    Name (_ADR, Zero)  // _ADR: Address
+    Name (_HID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _HID: Hardware ID
+    Name (_CID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _CID: Compatible ID
+    Name (_DDN, "ValleyView GPNCORE controller")  // _DDN: DOS Device Name
+    Name (_UID, 0x02)  // _UID: Unique ID
+    Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
+    {
+        Name (RBUF, ResourceTemplate ()
+        {
+            Memory32Fixed (ReadWrite,
+                0xFED0D000,         // Address Base
+                0x00001000,         // Address Length
+                )
+            Interrupt (ResourceConsumer, Level, ActiveLow, Shared, ,, )
+            {
+                0x00000030,
+            }
+        })
+        Return (RBUF) /* \_SB_.GPO1._CRS.RBUF */
+    }
+
+    Name (AVBL, Zero)
+    Method (_REG, 2, NotSerialized)  // _REG: Region Availability
+    {
+        If (LEqual (Arg0, 0x08))
+        {
+            Store (Arg1, AVBL) /* \_SB_.GPO1.AVBL */
+        }
+    }
+
+    OperationRegion (GPOP, GeneralPurposeIo, Zero, 0x0C)
+    Field (GPOP, ByteAcc, NoLock, Preserve)
+    {
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO1", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x000F
+                }
+        ), 
+        BST5,   1, 
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO1", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x001A
+                }
+        ), 
+        TCD3,   1
+    }
+
+    Method (_STA, 0, NotSerialized)  // _STA: Status
+    {
+        Return (0x0F)
+    }
+}
+
+Device (GPO2)
+{
+    Name (_ADR, Zero)  // _ADR: Address
+    Name (_HID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _HID: Hardware ID
+    Name (_CID, "INT33FC" /* Intel Baytrail GPIO Controller */)  // _CID: Compatible ID
+    Name (_DDN, "ValleyView GPSUS controller")  // _DDN: DOS Device Name
+    Name (_UID, 0x03)  // _UID: Unique ID
+    Method (_CRS, 0, NotSerialized)  // _CRS: Current Resource Settings
+    {
+        Name (RBUF, ResourceTemplate ()
+        {
+            Memory32Fixed (ReadWrite,
+                0xFED0E000,         // Address Base
+                0x00001000,         // Address Length
+                )
+            Interrupt (ResourceConsumer, Level, ActiveLow, Shared, ,, )
+            {
+                0x00000032,
+            }
+        })
+        Return (RBUF) /* \_SB_.GPO2._CRS.RBUF */
+    }
+
+    Method (_STA, 0, NotSerialized)  // _STA: Status
+    {
+        Return (0x0F)
+    }
+
+    Method (_AEI, 0, NotSerialized)  // _AEI: ACPI Event Interrupts
+    {
+        Name (RBUF, ResourceTemplate ()
+        {
+            GpioInt (Edge, ActiveLow, ExclusiveAndWake, PullUp, 0x0000,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0012
+                }
+            GpioInt (Edge, ActiveLow, ExclusiveAndWake, PullUp, 0x0000,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0002
+                }
+            GpioInt (Edge, ActiveBoth, ExclusiveAndWake, PullDefault, 0x0000,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0006
+                }
+        })
+        Name (FBUF, ResourceTemplate ()
+        {
+            GpioInt (Edge, ActiveBoth, SharedAndWake, PullUp, 0x0000,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0012
+                }
+            GpioInt (Edge, ActiveBoth, ExclusiveAndWake, PullDefault, 0x0000,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0006
+                }
+        })
+        Return (FBUF) /* \_SB_.GPO2._AEI.FBUF */
+    }
+
+    Name (BMUX, Buffer (0x03)
+    {
+         0x00, 0x01, 0x00                                 /* ... */
+    })
+    CreateByteField (BMUX, Zero, BBBY)
+    CreateByteField (BMUX, 0x02, DDDT)
+    Method (_E06, 0, NotSerialized)  // _Exx: Edge-Triggered GPE
+    {
+        If (LNotEqual (LIDA, Zero))
+        {
+            Store (And (PVAL, One), LIDS) /* \LIDS */
+            ^^PCI0.GFX0.GLID (LIDS)
+            Notify (LID0, 0x80) // Status Change
+        }
+    }
+
+    Method (_E12, 0, NotSerialized)  // _Exx: Edge-Triggered GPE
+    {
+        If (LAnd (LEqual (AVBL, One), LEqual (^^GPO1.AVBL, One)))
+        {
+            If (LEqual (^^I2C5.AVBL, One))
+            {
+                If (LEqual (USID, One))
+                {
+                    Store (Zero, ^^GPO1.BST5) /* \_SB_.GPO1.BST5 */
+                    Sleep (0x05)
+                    Store (^^I2C5.XP30, BMUX) /* \_SB_.GPO2.BMUX */
+                    And (DDDT, 0x7F, DDDT) /* \_SB_.GPO2.DDDT */
+                    Store (BMUX, ^^I2C5.XP30) /* \_SB_.I2C5.XP30 */
+                    Store (One, MOTG) /* \_SB_.GPO2.MOTG */
+                    ^^PCI0.XHC1.PWOF ()
+                }
+                Else
+                {
+                    Store (^^I2C5.XP30, BMUX) /* \_SB_.GPO2.BMUX */
+                    Or (DDDT, 0x80, DDDT) /* \_SB_.GPO2.DDDT */
+                    Store (BMUX, ^^I2C5.XP30) /* \_SB_.I2C5.XP30 */
+                    Sleep (0x05)
+                    Store (One, ^^GPO1.BST5) /* \_SB_.GPO1.BST5 */
+                    Sleep (0x05)
+                    Store (Zero, MOTG) /* \_SB_.GPO2.MOTG */
+                    ^^PCI0.XHC1.PWON ()
+                }
+            }
+        }
+    }
+
+    Name (BMBQ, Buffer (0x03)
+    {
+         0x00, 0x01, 0x00                                 /* ... */
+    })
+    CreateByteField (BMBQ, Zero, BBBQ)
+    CreateByteField (BMBQ, 0x02, DDBQ)
+    Method (BOST, 1, NotSerialized)
+    {
+        Store (^^I2C1.BQ01, BMBQ) /* \_SB_.GPO2.BMBQ */
+        If (LEqual (Arg0, One))
+        {
+            And (DDBQ, 0xCF, DDBQ) /* \_SB_.GPO2.DDBQ */
+            Or (DDBQ, 0x20, DDBQ) /* \_SB_.GPO2.DDBQ */
+        }
+        Else
+        {
+            And (DDBQ, 0xCF, DDBQ) /* \_SB_.GPO2.DDBQ */
+            Or (DDBQ, 0x10, DDBQ) /* \_SB_.GPO2.DDBQ */
+        }
+
+        Store (BMBQ, ^^I2C1.BQ01) /* \_SB_.I2C1.BQ01 */
+    }
+
+    Name (BUFC, Buffer (0x03)
+    {
+         0x00, 0x01, 0x00                                 /* ... */
+    })
+    CreateByteField (BUFC, Zero, BYAT)
+    CreateByteField (BUFC, 0x02, DATA)
+    Name (AVBL, Zero)
+    Method (_REG, 2, NotSerialized)  // _REG: Region Availability
+    {
+        If (LEqual (Arg0, 0x08))
+        {
+            Store (Arg1, AVBL) /* \_SB_.GPO2.AVBL */
+        }
+    }
+
+    OperationRegion (GPOP, GeneralPurposeIo, Zero, 0x0C)
+    Field (GPOP, ByteAcc, NoLock, Preserve)
+    {
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0014
+                }
+        ), 
+        WFD3,   1, 
+        Connection (
+            GpioIo (Exclusive, PullDefault, 0x0000, 0x0000, IoRestrictionOutputOnly,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0001
+                }
+        ), 
+        MOTG,   1, 
+        Connection (
+            GpioIo (Shared, PullDefault, 0x0000, 0x0000, IoRestrictionInputOnly,
+                "\\_SB.GPO2", 0x00, ResourceConsumer, ,
+                )
+                {   // Pin list
+                    0x0012
+                }
+        ), 
+        USID,   1
+    }
+}

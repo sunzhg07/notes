@@ -1,0 +1,82 @@
+EZpad pro 6 Ubuntu 安装
+以前装ubuntu要用EFINDER, 现在好了，新版本的ubuntu可以直接在这个平板上安装了。
+我把安装过程放在这里，做个备份，毕竟还有好多兄弟可能想折腾，虽然我不是大神，但是，作为一个深度装系统玩家，想把这些过程分享出来，大家一起玩，总会有些花样。
+第一步： 下载ubuntu 17.10 或18.04
+第二步：制作启动u盘， 可以用各种方法，以前的版本（16.10以前）要用refind，所以要把优盘格式化为fat32，现在不用了。
+可以refues， netbootin   ultraiso    dd, etc.
+第三步，安装，反正也就是正常的安装过程。装完之后直接能启动
+第四步，重启之后，没网，没触屏， 自动旋转上下反了， 本文 解决这三个问题
+
+
+
+1.	网卡驱动：
+https://github.com/lwfinger/rtl8723bu
+没网所以没法下载，要在安装前下载到优盘里面先存着。
+要编译，但是新装的系统没有编译器，想安装又没网。。。
+
+第一步，获得安装文件镜像，也就是ubuntu的光盘文件，
+挂载到/media/cdrom
+sudo mount Ubuntu-xxxxxx.iso /media/cdrom
+把这个光盘镜像作为更新源
+sudo apt-cdrom -d /media/cdrom add -m
+不要小看这个-m，没了它会自动umount
+Sudo apt update
+这个时候，apt就会找到光盘里面的build-essential软件（解决先有鸡还是先有蛋的问题）
+Sudo apt install build-essential
+这样你就有了gcc 和make了
+进入到rtl8723bu文件夹
+（打开makefile 在 extra_cflag += -Dconfig_concurrent_mod哪一行前面加#， 不然编译出来有两个网络，具体看readme）
+Make -j4
+Sudo make install
+这样就安装好了
+删除过去的网卡驱动 
+lsmod | grep rtl
+会有rtl8xxx.u之类的模块在运行，所以你能找到网络但连不上。删掉他
+Sudo modprobe -r rtl8xxx.bu(仔细看以下名字)
+
+Sudo rmmod rtl8xxx.bu(仔细看以下名字)
+Sudo modprobe 8723bu
+
+这时你应该能上网了，不行就重启一下。 读一下readmewen文件， 后面有怎么用dkms使得每次更新内核不用重新安装
+
+2． 解决了网卡问题，先来一发更新呗
+Sudo apt update
+Sudo at upgrade
+
+然后来看触摸屏
+下载附件中的驱动
+，也是github上面别人的，不知道为什么
+https://github.com/onitake/gsl-firmware/tree/master/firmware/jumper/EZpad_6_pro
+中的驱动在ezpad 6 pro. 中不能直接用，我自己从windows驱动里面提取了silead_ts.fw 效果不错，不用校准就能用。
+安装
+固件放在tsforezpad6pro里面
+进入gslx680-acpi-master
+Make
+Sudo  ./install
+成功
+Sudo rmmod silead 删掉系统自带的驱动程序，其实也能用，但是我用它自带的触屏只有一小块起作用，懒得折腾了。
+Sudo modprobe gslx680_ts_acpi
+你就能触摸了，也不用校准，刚刚好，当然也可以安装xinput-calibrate 校准
+
+3.	可能到这里你已经被ubuntu18.04的自动旋转搞烦了。
+好吧。
+Cd /etc/udev/hwdb.d
+Vi 61-sensor-local.hwdb
+插入sensor:modalias:acpi:BOSC0200*:dmi:*:svnJumper*:pnEZpad:*
+ ACCEL_MOUNT_MATRIX=1, 0, 0; 0, -1, 0; 0, 0, 1
+保存退出
+Sudo system-hwdb update 
+重启
+自动旋转正常了
+注：系统自带了这个文件https://github.com/systemd/systemd/blob/master/hwdb/60-sensor.hwdb
+里面的ezpad6 也不知道是哪个ezpad。
+本教程只适合ezpad 6 pro 
+注：GitHub上的大神给的触摸屏驱动在我电脑上总是不行，我附上windows驱动里面提取出的固件 silead.fw
+你可以用https://github.com/onitake/gsl-firmware/tree/master/firmware/jumper/EZpad_6_pro
+里面最后的
+./gsl-firmware/tools/fwtool -c firmware.fw -m 1680 -w 1980 -h 1500 -t 10 silead_ts.fw
+
+生成咱们的silead_ts.fw
+教程完
+
+
